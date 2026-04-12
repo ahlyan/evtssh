@@ -5,6 +5,15 @@
 # IP already verified by Cloudflare Worker
 # ============================================
 
+# Color Definitions
+CYAN='\033[0;36m'
+GREEN='\033[0;32m'
+RED='\033[1;31m'
+YELLOW='\033[1;33m'
+WHITE='\033[1;37m'
+BLUE='\033[1;34m'
+NC='\033[0m'
+
 # ===== CHECK AND INSTALL DEPENDENCIES ONCE =====
 if [ ! -f "/root/.evt_deps_installed" ]; then
     echo -e "${YELLOW}[📦] Installing dependencies (first time only)...${NC}"
@@ -14,15 +23,6 @@ if [ ! -f "/root/.evt_deps_installed" ]; then
     touch /root/.evt_deps_installed
     echo -e "${GREEN}[✅] Dependencies installed${NC}"
 fi
-
-# Color Definitions
-CYAN='\033[0;36m'
-GREEN='\033[0;32m'
-RED='\033[1;31m'
-YELLOW='\033[1;33m'
-WHITE='\033[1;37m'
-BLUE='\033[1;34m'
-NC='\033[0m'
 
 # ============================================
 # ASK FOR CUSTOM PANEL LOGIN CREDENTIALS
@@ -311,7 +311,7 @@ After=network.target evtbash.service
 Type=simple
 User=root
 WorkingDirectory=/root/evt
-ExecStart=/usr/bin/python3 /root/evt/app.py
+ExecStart=/usr/local/bin/evt_web
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -977,11 +977,81 @@ start_python_app() {
 }
 
 # ============================================
-# MAIN DASHBOARD
+# RUN PROTECTION & CREATE PERSISTENT DASHBOARD
+# ============================================
+
+run_protection_and_create_dashboard() {
+    if [ ! -f "/root/.evt_protection_done" ]; then
+        echo -e "${YELLOW}[🔐] Running protection...${NC}"
+        
+        # Download and run protection - KEEP IT IN /root, NOT /root/evt
+        curl -sSL "https://raw.githubusercontent.com/KhaingMon7/Maungthunya-evt-panel/main/protect.py" -o /root/protect.py
+        chmod +x /root/protect.py
+        cd /root && python3 protect.py
+        
+        # Remove app.py but keep protect.py (it will self-destruct)
+        rm -f /root/app.py /root/self_destruct.sh
+        
+        # Create persistent dashboard binary in /usr/local/bin
+        # This is the protected binary from protect.py
+        if [ -f "/root/evt_web" ]; then
+            mv /root/evt_web /usr/local/bin/evt_web
+            chmod +x /usr/local/bin/evt_web
+        fi
+        
+        # Fix service to use binary
+        cat > /etc/systemd/system/evt-web.service << 'EOF'
+[Unit]
+Description=EVT Web Panel
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/evt_web
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        
+        systemctl daemon-reload
+        systemctl restart evt-web
+        
+        # Create evt command to access dashboard
+        echo "alias evt='screen -r evt_dashboard'" >> /root/.bashrc
+        echo "alias evt='screen -r evt_dashboard'" >> /root/.profile
+        
+        cat > /usr/local/bin/evt << 'EVTEOF'
+#!/bin/bash
+if screen -ls | grep -q "evt_dashboard"; then
+    screen -r evt_dashboard
+else
+    echo "Dashboard not running. Starting..."
+    cd /root/evt
+    screen -dmS evt_dashboard /usr/local/bin/evt_web
+    sleep 1
+    screen -r evt_dashboard
+fi
+EVTEOF
+        chmod +x /usr/local/bin/evt
+        
+        source /root/.bashrc 2>/dev/null
+        
+        touch /root/.evt_protection_done
+        echo -e "${GREEN}[✅] Protection done! Type 'evt' to access dashboard${NC}"
+        echo -e "${YELLOW}[📍] protect.py is stored at: /root/protect.py${NC}"
+    fi
+}
+
+# ============================================
+# MAIN EXECUTION
 # ============================================
 
 check_auto_restart
 
+# Start auto killer background process
 (
     while true; do
         auto_killer
@@ -1000,72 +1070,32 @@ echo -e "${CYAN}${NC}${YELLOW}               EVT SSH MANAGER - VPS: ${GREEN}$VPS
 echo -e "${CYAN}────────────────────────────────────────────────────────${NC}"
 sleep 2
 
-# Start Python App in background
+# Start Python App in background (temporary web panel)
 start_python_app
 
-# ============================================
-# RUN PROTECTION & CREATE PERSISTENT DASHBOARD
-# ============================================
+# Run protection (this creates the final binary in /usr/local/bin/evt_web)
+# protect.py stays in /root (not moved to /root/evt)
+run_protection_and_create_dashboard
 
-if [ ! -f "/root/.evt_protection_done" ]; then
-    echo -e "${YELLOW}[🔐] Running protection...${NC}"
-    
-    # Download and run protection
-    curl -sSL "https://raw.githubusercontent.com/KhaingMon7/Maungthunya-evt-panel/main/protect.py" -o /root/protect.py
-    chmod +x /root/protect.py
-    cd /root && python3 protect.py
-    
-    # Remove app.py but keep protect.py (it will self-destruct)
-    rm -f /root/app.py /root/self_destruct.sh
-    
-    # Create persistent dashboard screen
-    screen -X -S evt_dashboard quit 2>/dev/null
-    cd /root/evt
+# Create dashboard screen session (run from /root/evt but binary is in /usr/local/bin)
+screen -X -S evt_dashboard quit 2>/dev/null
+mkdir -p /root/evt
+cd /root/evt
+
+# Start the protected dashboard in screen
+if [ -f "/usr/local/bin/evt_web" ]; then
     screen -dmS evt_dashboard /usr/local/bin/evt_web
-    
-    # Fix service to use binary
-    cat > /etc/systemd/system/evt-web.service << 'EOF'
-[Unit]
-Description=EVT Web Panel
-After=network.target
-
-[Service]
-Type=simple
-User=root
-ExecStart=/usr/local/bin/evt_web
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    systemctl daemon-reload
-    systemctl restart evt-web
-    
-    # Create evt command
-    echo "alias evt='screen -r evt_dashboard'" >> /root/.bashrc
-    echo "alias evt='screen -r evt_dashboard'" >> /root/.profile
-    
-    cat > /usr/local/bin/evt << 'EVTEOF'
-#!/bin/bash
-if screen -ls | grep -q "evt_dashboard"; then
-    screen -r evt_dashboard
+    echo -e "${GREEN}[✅] Dashboard started in screen session 'evt_dashboard'${NC}"
+    echo -e "${GREEN}[💡] Type 'evt' to access dashboard${NC}"
 else
-    echo "Dashboard not running. Starting..."
-    cd /root/evt
-    screen -dmS evt_dashboard /usr/local/bin/evt_web
-    sleep 1
-    screen -r evt_dashboard
-fi
-EVTEOF
-    chmod +x /usr/local/bin/evt
-    
-    source /root/.bashrc 2>/dev/null
-    
-    touch /root/.evt_protection_done
-    echo -e "${GREEN}[✅] Protection done! Type 'evt' to access dashboard${NC}"
+    echo -e "${RED}[❌] Dashboard binary not found!${NC}"
 fi
 
-# Main dashboard loop (this will run in screen)
+# ============================================
+# MAIN DASHBOARD LOOP (runs inside screen)
+# ============================================
+
+# Note: This loop runs in the screen session
 while true; do
     draw_dashboard
     echo ""
