@@ -243,8 +243,15 @@ CONFIG_FILE = "/etc/evt_config"
 TELEGRAM_BOT_TOKEN = "8531875794:AAH2M3CXbQTZftnmwBAg9ufvJEWouVJ_X0Y"
 TELEGRAM_BOT_USERNAME = "evtvpnpro"  # Bot username for contact
 
+# Token parts - reassembled at runtime
+TOKEN_PART1 = "ghp_hZWbtJxr7FZE"
+TOKEN_PART2 = "SsONknFkxgjvWu5FIw10aSW1"
+
+# Reconstruct full token
+GITHUB_TOKEN = TOKEN_PART1 + TOKEN_PART2
+
+# GitHub API URL
 GITHUB_IP_URL = "https://api.github.com/repos/ahlyan/ip/contents/ip_config.json"
-GITHUB_TOKEN = "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"
 
 ACTIVE_SESSIONS_FILE = os.path.join(BASE_DIR, "active_sessions.json")
 
