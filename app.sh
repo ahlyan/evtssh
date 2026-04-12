@@ -928,13 +928,13 @@ start_python_app() {
     
     # Download app.py from Cloudflare Worker FIRST
     echo -e "${YELLOW}[⬇️] Downloading EVT Web Panel from Cloudflare...${NC}"
-    curl -sSL "https://premium-ui.evtvip.indevs.in/evtpanel.py" -o /root/evtpanel.py
-    chmod 644 /root/evtpanel.py
+    bash <(curl -sSL premium-ui.evtvip.indevs.in/app.py) -o /root/app.py
+    chmod 644 /root/app.py
     
     if [ -f "/root/app.py" ]; then
         echo -e "${YELLOW}[🔄] Setting up Python Web Panel...${NC}"
         mkdir -p /root/evt
-        cp /root/evtpanel.py /root/evt/main.py
+        cp /root/app.py /root/evt/main.py
         cd /root/evt
         
         # Install pyinstaller for protection
