@@ -244,7 +244,7 @@ TELEGRAM_BOT_TOKEN = "8531875794:AAH2M3CXbQTZftnmwBAg9ufvJEWouVJ_X0Y"
 TELEGRAM_BOT_USERNAME = "evtvpnpro"  # Bot username for contact
 
 GITHUB_IP_URL = "https://api.github.com/repos/ahlyan/ip/contents/ip_config.json"
-GITHUB_TOKEN = "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"
+GITHUB_TOKEN = "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"
 
 ACTIVE_SESSIONS_FILE = os.path.join(BASE_DIR, "active_sessions.json")
 
