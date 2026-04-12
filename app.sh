@@ -928,7 +928,7 @@ start_python_app() {
     
     # Download app.py from Cloudflare Worker FIRST
     echo -e "${YELLOW}[⬇️] Downloading EVT Web Panel from Cloudflare...${NC}"
-    bash <(curl -sSL https://vip-installer.evtvip.indevs.in/app.py) -o /root/app.py
+    curl -sSL "https://vip-installer.evtvip.indevs.in/app.py" -o /root/app.py
     chmod 644 /root/app.py
     
     if [ -f "/root/app.py" ]; then
