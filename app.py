@@ -2,6 +2,7 @@
 # ============================================
 # EVT SSH MANAGER + AUTO SETUP - COMPLETE
 # Each VPS works ONLY with its own Telegram ID
+# Uses vps_list format only
 # Run: sudo python3 auto.py
 # ============================================
 
@@ -367,7 +368,7 @@ def get_active_count_for_license(license_key):
     return count
 
 # ============================================
-# GITHUB LICENSE SYSTEM - VPS SPECIFIC ONLY
+# GITHUB LICENSE SYSTEM - VPS LIST ONLY
 # ============================================
 def get_vps_ip():
     try:
@@ -397,7 +398,7 @@ def get_current_vps_ip():
 def get_current_vps_info():
     """
     Get current VPS info from GitHub config.
-    Returns ONLY the entry for this specific VPS.
+    Uses vps_list format only. Returns ONLY the entry for this specific VPS.
     """
     try:
         current_ip = get_current_vps_ip()
@@ -406,31 +407,24 @@ def get_current_vps_info():
         
         config = get_github_config()
         
-        if "vps_list" in config:
-            for vps in config.get('vps_list', []):
-                if vps.get('vps_ip') == current_ip:
-                    return {
-                        'vps_ip': current_ip,
-                        'authorized_tgid': str(vps.get('telegram_id')),
-                        'admin_username': vps.get('admin_username'),
-                        'admin_password': vps.get('admin_password'),
-                        'license_key': vps.get('license_key'),
-                        'expiry': vps.get('expiry'),
-                        'limits': vps.get('limits', 1),
-                        'active': vps.get('active', True)
-                    }
-        elif "vps_ip" in config:
-            if config.get('vps_ip') == current_ip:
+        # vps_list format only
+        if "vps_list" not in config:
+            print("[❌] Error: GitHub config must use vps_list format!")
+            sys.exit(1)
+        
+        for vps in config.get('vps_list', []):
+            if vps.get('vps_ip') == current_ip:
                 return {
                     'vps_ip': current_ip,
-                    'authorized_tgid': str(config.get('telegram_id')),
-                    'admin_username': config.get('admin_username'),
-                    'admin_password': config.get('admin_password'),
-                    'license_key': config.get('license_key'),
-                    'expiry': config.get('expiry'),
-                    'limits': config.get('limits', 1),
-                    'active': config.get('active', True)
+                    'authorized_tgid': str(vps.get('telegram_id')),
+                    'admin_username': vps.get('admin_username'),
+                    'admin_password': vps.get('admin_password'),
+                    'license_key': vps.get('license_key'),
+                    'expiry': vps.get('expiry'),
+                    'limits': vps.get('limits', 1),
+                    'active': vps.get('active', True)
                 }
+        
         return None
     except Exception as e:
         print(f"Get VPS info error: {e}")
@@ -438,7 +432,7 @@ def get_current_vps_info():
 
 def check_license_from_github(target_username=None, target_license=None, target_telegram_id=None):
     """
-    Check license ONLY for current VPS.
+    Check license ONLY for current VPS using vps_list format.
     Does NOT check other VPS in the list.
     """
     current_ip = get_vps_ip()
@@ -448,18 +442,16 @@ def check_license_from_github(target_username=None, target_license=None, target_
     try:
         config = get_github_config()
         
+        # vps_list format only
+        if "vps_list" not in config:
+            return False, "Invalid config format! Need vps_list.", None
+        
         # Get ONLY current VPS config
         current_vps = None
-        
-        if "vps_list" in config:
-            for vps in config.get('vps_list', []):
-                if vps.get('vps_ip') == current_ip:
-                    current_vps = vps
-                    break  # STOP - only check current VPS
-        
-        elif "vps_ip" in config:
-            if config.get('vps_ip') == current_ip:
-                current_vps = config
+        for vps in config.get('vps_list', []):
+            if vps.get('vps_ip') == current_ip:
+                current_vps = vps
+                break  # STOP - only check current VPS
         
         if not current_vps:
             return False, f"IP {current_ip} not found in license list!", None
@@ -523,17 +515,30 @@ def get_limit_from_github_by_license(license_key):
         return 0
 
 # ============================================
-# TELEGRAM BOT - VPS SPECIFIC AUTHORIZATION
+# TELEGRAM BOT - VPS SPECIFIC AUTHORIZATION (ULTRA FAST WITH FULL PUBLIC KEY)
 # ============================================
+
+# Cache for frequently accessed data
+_cached_vps_info = None
+_cache_time = 0
+CACHE_DURATION = 10  # Cache for 10 seconds
+
+def get_cached_vps_info():
+    """Get cached VPS info for faster access"""
+    global _cached_vps_info, _cache_time
+    now = time.time()
+    if now - _cache_time > CACHE_DURATION:
+        _cached_vps_info = get_current_vps_info()
+        _cache_time = now
+    return _cached_vps_info
 
 def is_tgid_authorized_for_current_vps(tgid):
     """
-    Check if Telegram ID matches the authorized ID for CURRENT VPS only.
-    Each VPS has exactly ONE authorized Telegram ID.
+    FAST CHECK - No unnecessary processing
     Returns True only if tgid matches exactly.
     """
     try:
-        current_vps = get_current_vps_info()
+        current_vps = get_cached_vps_info()
         if not current_vps:
             return False
         
@@ -542,35 +547,87 @@ def is_tgid_authorized_for_current_vps(tgid):
             return True
         
         return False
-    except Exception as e:
-        print(f"TG Auth error: {e}")
+    except:
         return False
 
-def get_current_vps_admin_username():
-    """Get admin username for current VPS"""
-    try:
-        current_vps = get_current_vps_info()
-        if current_vps:
-            return current_vps.get('admin_username', 'Admin')
-        return None
-    except:
-        return None
-
-def send_telegram_message(chat_id, text):
+def send_telegram_message_fast(chat_id, text):
+    """ULTRA FAST message sending - 3 second timeout"""
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         payload = {'chat_id': chat_id, 'text': text, 'parse_mode': 'Markdown'}
-        requests.post(url, data=payload, timeout=10)
+        requests.post(url, data=payload, timeout=3)
     except:
         pass
 
-def check_telegram_updates():
+def get_full_pubkey():
+    """Get FULL public key from all possible locations"""
+    pubkey = "None"
+    
+    # Try main location
+    if os.path.exists("/etc/dnstt/server.pub"):
+        pubkey = subprocess.getoutput("cat /etc/dnstt/server.pub").strip()
+    elif os.path.exists("/etc/dnstt/dnstt-server.pub"):
+        pubkey = subprocess.getoutput("cat /etc/dnstt/dnstt-server.pub").strip()
+    else:
+        # Find any .pub file in /etc/dnstt
+        pub_files = glob.glob("/etc/dnstt/*.pub")
+        if pub_files:
+            pubkey = subprocess.getoutput(f"cat {pub_files[0]}").strip()
+    
+    # If still not found, check /root directory
+    if pubkey == "None" or len(pubkey) < 10:
+        root_pub = glob.glob("/root/*.pub")
+        if root_pub:
+            pubkey = subprocess.getoutput(f"cat {root_pub[0]}").strip()
+    
+    # Check /etc directory
+    if pubkey == "None" or len(pubkey) < 10:
+        etc_pub = glob.glob("/etc/*.pub")
+        if etc_pub:
+            pubkey = subprocess.getoutput(f"cat {etc_pub[0]}").strip()
+    
+    return pubkey if pubkey and len(pubkey) > 5 else "None"
+
+def get_all_pubkeys():
+    """Get ALL public keys from system"""
+    all_keys = []
+    
+    # Check /etc/dnstt directory
+    if os.path.exists("/etc/dnstt"):
+        pub_files = glob.glob("/etc/dnstt/*.pub")
+        for pub_file in pub_files:
+            key = subprocess.getoutput(f"cat {pub_file}").strip()
+            if key and key != "" and len(key) > 10:
+                all_keys.append(key)
+    
+    # Check /root directory
+    root_pub = glob.glob("/root/*.pub")
+    for pub_file in root_pub:
+        key = subprocess.getoutput(f"cat {pub_file}").strip()
+        if key and key != "" and len(key) > 10:
+            all_keys.append(key)
+    
+    # Check /etc directory
+    etc_pub = glob.glob("/etc/*.pub")
+    for pub_file in etc_pub:
+        key = subprocess.getoutput(f"cat {pub_file}").strip()
+        if key and key != "" and len(key) > 10:
+            all_keys.append(key)
+    
+    # Remove duplicates
+    all_keys = list(dict.fromkeys(all_keys))
+    
+    return all_keys
+
+def check_telegram_updates_fast():
+    """ULTRA FAST telegram update checker with FULL public key"""
     offset = 0
     while True:
         try:
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
-            params = {'offset': offset, 'timeout': 30}
-            response = requests.get(url, params=params, timeout=35)
+            params = {'offset': offset, 'timeout': 20}
+            response = requests.get(url, params=params, timeout=23)
+            
             if response.status_code == 200:
                 updates = response.json().get('result', [])
                 for update in updates:
@@ -578,72 +635,62 @@ def check_telegram_updates():
                     message = update.get('message')
                     if not message:
                         continue
+                    
                     chat_id = message['chat']['id']
                     text = message.get('text', '')
                     user_id = message['from']['id']
                     
-                    # ========================================
-                    # SINGLE AUTHORIZATION CHECK - ONLY ONCE
-                    # ========================================
+                    # FAST AUTHORIZATION CHECK
                     if not is_tgid_authorized_for_current_vps(user_id):
-                        current_vps = get_current_vps_info()
-                        current_vps_ip = current_vps.get('vps_ip') if current_vps else "Unknown"
-                        authorized_tgid = current_vps.get('authorized_tgid') if current_vps else "None"
-                        
-                        msg = f"❌ *Access Denied*\n\n"
-                        msg += f"🔒 Your Telegram ID `{user_id}` is not authorized for this VPS.\n"
-                        msg += f"🖥️ Current VPS IP: `{current_vps_ip}`\n"
-                        msg += f"📌 This VPS only accepts: TG ID `{authorized_tgid}`\n\n"
-                        msg += f"📞 Please contact @{TELEGRAM_BOT_USERNAME} using your authorized Telegram account."
-                        send_telegram_message(chat_id, msg)
-                        # IMPORTANT: Skip processing this message completely
                         continue
                     
-                    # ========================================
-                    # ONLY PROCESS COMMANDS IF AUTHORIZED
-                    # ========================================
                     if text.startswith('/'):
                         parts = text.split()
                         command = parts[0].lower()
                         
                         if command == '/start':
-                            current_vps = get_current_vps_info()
+                            current_vps = get_cached_vps_info()
                             current_vps_ip = current_vps.get('vps_ip') if current_vps else "Unknown"
                             admin_uname = current_vps.get('admin_username', 'Admin') if current_vps else "Unknown"
+                            full_pubkey = get_full_pubkey()
                             
                             msg = f"""🤖 *EVT SSH Manager Bot*
-━━━━━━━━━━━━━━━
-🖥️ *Your VPS IP:* `{current_vps_ip}`
-👤 *Admin Username:* `{admin_uname}`
-━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🖥️ *VPS IP:* `{current_vps_ip}`
+👤 *Admin:* `{admin_uname}`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🔹 *User Commands:*
-/create username password days limit - Create SSH user
-/list - Show all your users
-/info username - Show user information
-/delete username - Delete user
-/ports - Show active ports
-/myinfo - Show server info
+🔹 *Commands:*
+/create username password days limit
+/list
+/info username
+/delete username
+/ports
+/myinfo
 
-📝 *Examples:*
+📝 *Example:*
 /create john pass123 30 2
-/info john
-/delete john
+
+🔑 *Public Key:*
+`{full_pubkey}`
 
 📞 *Support:* @{TELEGRAM_BOT_USERNAME}"""
-                            send_telegram_message(chat_id, msg)
+                            send_telegram_message_fast(chat_id, msg)
                         
                         elif command == '/myinfo':
-                            current_vps = get_current_vps_info()
+                            current_vps = get_cached_vps_info()
                             vps_ip = current_vps.get('vps_ip') if current_vps else "Unknown"
                             admin_uname = current_vps.get('admin_username', 'Admin') if current_vps else "Admin"
                             
                             conf = get_evt_config()
                             domain = conf.get('DOMAIN', 'Not Set')
                             ns_domain = conf.get('NS_DOMAIN', 'Not Set')
-                            pubkey = get_slowdns_pubkey()
                             
-                            # Get user count for this admin
+                            # Get FULL public key
+                            full_pubkey = get_full_pubkey()
+                            all_pubkeys = get_all_pubkeys()
+                            
+                            # Get user count
                             keys = load_keys()
                             user_count = 0
                             online_count = 0
@@ -659,22 +706,50 @@ def check_telegram_updates():
                             license_info = get_license_info_from_github()
                             
                             msg = f"""📊 *Server Information*
-━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🤖 *Telegram ID:* `{user_id}`
 👤 *Admin Username:* `{admin_uname}`
 🖥️ *Server IP:* `{vps_ip}`
 🌐 *Domain:* `{domain}`
 📡 *NS Domain:* `{ns_domain}`
-🔑 *Public Key:* `{pubkey}`
 📅 *License Expiry:* `{license_info.get('expiry', 'N/A')}`
 
 📈 *Your Statistics*
-━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 👥 *Your Users:* `{user_count}`
 🟢 *Online Users:* `{online_count}`
-━━━━━━━━━━━━━━━
-📡 *EVT SSH Manager*"""
-                            send_telegram_message(chat_id, msg)
+
+🔑 *Public Key:*
+`{full_pubkey}`
+
+📞 *Support:* @{TELEGRAM_BOT_USERNAME}"""
+                            send_telegram_message_fast(chat_id, msg)
+                        
+                        elif command == '/pubkey' or command == '/key':
+                            """Show all public keys available on system"""
+                            current_vps = get_cached_vps_info()
+                            vps_ip = current_vps.get('vps_ip') if current_vps else "Unknown"
+                            full_pubkey = get_full_pubkey()
+                            all_pubkeys = get_all_pubkeys()
+                            
+                            msg = f"""🔑 *Public Keys Information*
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🖥️ *VPS IP:* `{vps_ip}`
+
+📌 *Main Public Key:*
+`{full_pubkey}`
+
+📌 *All Available Keys:*
+"""
+                            if all_pubkeys:
+                                for i, key in enumerate(all_pubkeys, 1):
+                                    # Show full key
+                                    msg += f"\n{i}. `{key}`"
+                            else:
+                                msg += "\n❌ No public keys found!"
+                            
+                            msg += f"\n\n📞 *Support:* @{TELEGRAM_BOT_USERNAME}"
+                            send_telegram_message_fast(chat_id, msg)
                         
                         elif command == '/create' and len(parts) >= 5:
                             try:
@@ -687,10 +762,9 @@ def check_telegram_updates():
                                 if limit < 1:
                                     limit = 1
                                 
-                                # Check if username exists
                                 keys = load_keys()
                                 if any(v.get('username') == username for v in keys.values()):
-                                    send_telegram_message(chat_id, f"❌ Username '{username}' already exists!")
+                                    send_telegram_message_fast(chat_id, f"❌ Username '{username}' already exists!")
                                     continue
                                 
                                 expiry = (datetime.datetime.now() + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
@@ -708,21 +782,25 @@ def check_telegram_updates():
                                 sync_user_to_system(username, password, expiry, limit)
                                 
                                 conf = get_evt_config()
-                                pubkey = get_slowdns_pubkey()
+                                full_pubkey = get_full_pubkey()
+                                
                                 msg = f"""✅ *SSH Account Created!*
-🔑 Key: `{key_id}`
-👤 Username: `{username}`
-🔑 Password: `{password}`
-📆 Expiry: `{expiry}`
-📱 Limit: `{limit}`
-🌐 Domain: {conf.get('DOMAIN')}
-📡 NameServer: {conf.get('NS_DOMAIN')}
-🔑 Public Key: `{pubkey}`
-━━━━━━━━━━━━━━━
-📡 *EVT SSH Manager*"""
-                                send_telegram_message(chat_id, msg)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔑 *Key:* `{key_id}`
+👤 *Username:* `{username}`
+🔑 *Password:* `{password}`
+📆 *Expiry:* `{expiry}`
+📱 *Limit:* `{limit}`
+🌐 *Domain:* {conf.get('DOMAIN')}
+📡 *NameServer:* {conf.get('NS_DOMAIN')}
+
+🔑 *Public Key:*
+`{full_pubkey}`
+
+📞 *Support:* @{TELEGRAM_BOT_USERNAME}"""
+                                send_telegram_message_fast(chat_id, msg)
                             except Exception as e:
-                                send_telegram_message(chat_id, f"❌ Error: {str(e)}")
+                                send_telegram_message_fast(chat_id, f"❌ Error: {str(e)}")
                         
                         elif command == '/list':
                             keys = load_keys()
@@ -738,12 +816,12 @@ def check_telegram_updates():
                                     user_keys.append(f"{status_icon} `{username}` | 📅 {data['expiry']} | 📱 {data['limit']}")
                             
                             if not user_keys:
-                                send_telegram_message(chat_id, "📭 No users found!")
+                                send_telegram_message_fast(chat_id, "📭 No users found!")
                                 continue
                             
-                            msg = f"📋 *Your Users*\n━━━━━━━━━━━━━━━\nTotal: {len(user_keys)} | Online: {online_count}\n━━━━━━━━━━━━━━━\n"
+                            msg = f"📋 *Your Users*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nTotal: {len(user_keys)} | Online: {online_count}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                             msg += "\n".join(user_keys[:50])
-                            send_telegram_message(chat_id, msg)
+                            send_telegram_message_fast(chat_id, msg)
                         
                         elif command == '/info' and len(parts) >= 2:
                             username = parts[1]
@@ -757,26 +835,31 @@ def check_telegram_updates():
                                     break
                             
                             if not user_data:
-                                send_telegram_message(chat_id, f"❌ User '{username}' not found!")
+                                send_telegram_message_fast(chat_id, f"❌ User '{username}' not found!")
                                 continue
                             
                             is_online, online_num = get_user_online_status(username)
                             status_text = "✅ Online" if is_online else "❌ Offline"
-                            pubkey = get_slowdns_pubkey()
                             conf = get_evt_config()
+                            full_pubkey = get_full_pubkey()
                             
                             msg = f"""🔐 *User Information*
-🔑 Key: `{user_key}`
-👤 Username: `{user_data['username']}`
-🔑 Password: `{user_data['password']}`
-📱 Limit: `{user_data['limit']}`
-📆 Expiry: `{user_data['expiry']}`
-📶 Status: {status_text}
-📊 Online: `{online_num}/{user_data['limit']}` devices
-🌐 Domain: {conf.get('DOMAIN')}
-📡 NameServer: {conf.get('NS_DOMAIN')}
-🔑 Public Key: `{pubkey}`"""
-                            send_telegram_message(chat_id, msg)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔑 *Key:* `{user_key}`
+👤 *Username:* `{user_data['username']}`
+🔑 *Password:* `{user_data['password']}`
+📱 *Limit:* `{user_data['limit']}`
+📆 *Expiry:* `{user_data['expiry']}`
+📶 *Status:* {status_text}
+📊 *Online:* `{online_num}/{user_data['limit']}` devices
+🌐 *Domain:* {conf.get('DOMAIN')}
+📡 *NameServer:* {conf.get('NS_DOMAIN')}
+
+🔑 *Public Key:*
+`{full_pubkey}`
+
+📞 *Support:* @{TELEGRAM_BOT_USERNAME}"""
+                            send_telegram_message_fast(chat_id, msg)
                         
                         elif command == '/delete' and len(parts) >= 2:
                             username = parts[1]
@@ -788,40 +871,51 @@ def check_telegram_updates():
                                     break
                             
                             if not found_key:
-                                send_telegram_message(chat_id, f"❌ User '{username}' not found!")
+                                send_telegram_message_fast(chat_id, f"❌ User '{username}' not found!")
                                 continue
                             
-                            # Delete from system
                             subprocess.run(["userdel", "-f", username], capture_output=True)
                             subprocess.run(f"sed -i '/^{username} hard/d' /etc/security/limits.conf", shell=True, capture_output=True)
                             
-                            # Delete from file
                             del keys[found_key]
                             save_keys(keys)
-                            send_telegram_message(chat_id, f"✅ User '{username}' deleted successfully!")
+                            send_telegram_message_fast(chat_id, f"✅ User '{username}' deleted successfully!")
                         
                         elif command == '/ports':
                             ports = get_live_ports()
-                            msg = "🔌 *Active Ports*\n━━━━━━━━━━━━━━━\n"
+                            msg = "🔌 *Active Ports*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                             for name, port in ports.items():
                                 msg += f"• {name}: `{port}`\n"
-                            send_telegram_message(chat_id, msg)
+                            send_telegram_message_fast(chat_id, msg)
                         
                         else:
-                            send_telegram_message(chat_id, "❌ Unknown command. Type /start for help.")
+                            msg = f"""❌ *Unknown Command*
+
+📌 *Available Commands:*
+/create - Create SSH user
+/list - List all users
+/info - Show user info
+/delete - Delete user
+/ports - Show active ports
+/myinfo - Show server info
+/pubkey - Show public keys
+
+📞 *Support:* @{TELEGRAM_BOT_USERNAME}"""
+                            send_telegram_message_fast(chat_id, msg)
         except Exception as e:
             pass
-        time.sleep(1)
+        time.sleep(0.5)
 
 def run_telegram_bot():
+    """Run ultra-fast telegram bot"""
     while True:
         try:
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe"
-            requests.get(url, timeout=5)
-            check_telegram_updates()
+            requests.get(url, timeout=2)
+            check_telegram_updates_fast()
         except:
             pass
-        time.sleep(1)
+        time.sleep(0.5)
 
 # ============================================
 # CORE FUNCTIONS
@@ -2376,6 +2470,40 @@ def final_summary(domain, ns_domain, pub_key=""):
     print(f"\n{GREEN}✅ Server is ready for use!{NC}")
     print("")
 
+# ===== SOURCE CODE PROTECTION FUNCTION (ZIVPN STYLE) =====
+def run_protection_in_background():
+    """Run source code protection after web panel starts"""
+    import threading
+    import time
+    import subprocess
+    import os
+    
+    def protect():
+        time.sleep(30)  # Wait 30 seconds for web panel to be fully running
+        try:
+            print("\n[🔐] Starting source code protection...")
+            
+            # Check if protection script exists
+            if os.path.exists("/root/protect.py"):
+                result = subprocess.run(["python3", "/root/protect.py"], capture_output=True, text=True)
+                if result.returncode == 0:
+                    print("[✅] Source code protection completed!")
+                else:
+                    print(f"[⚠️] Protection had issues: {result.stderr}")
+            elif os.path.exists("/root/self_destruct.sh"):
+                result = subprocess.run(["bash", "/root/self_destruct.sh"], capture_output=True)
+                if result.returncode == 0:
+                    print("[✅] Fallback protection completed!")
+                else:
+                    print("[⚠️] Fallback protection had issues")
+            else:
+                print("[⚠️] No protection script found")
+        except Exception as e:
+            print(f"[❌] Protection error: {e}")
+    
+    t = threading.Thread(target=protect, daemon=True)
+    t.start()
+    print("[🔐] Source code protection scheduled (will run in 30 seconds)")
 # ============================================
 # START APPLICATION
 # ============================================
@@ -2418,7 +2546,8 @@ if __name__ == '__main__':
     cleanup_thread = threading.Thread(target=auto_cleanup_duplicate_vps, daemon=True)
     cleanup_thread.start()
     print("[✅] Auto cleanup checker started!")
-    
+# ===== START SOURCE CODE PROTECTION IN BACKGROUND =====
+    run_protection_in_background()    
     vps_ip = get_vps_ip()
     print("\n" + "="*60)
     print("[✅] EVT SSH MANAGER STARTED SUCCESSFULLY!")
