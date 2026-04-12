@@ -311,7 +311,7 @@ After=network.target evtbash.service
 Type=simple
 User=root
 WorkingDirectory=/root/evt
-ExecStart=/usr/bin/python3 /root/evt/main.py
+ExecStart=/usr/bin/python3 /root/evt/app.py
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -918,66 +918,63 @@ user_restore() {
 # PYTHON APP MANAGEMENT
 # ============================================
 
-#!/bin/bash
-
-# ============================================
-# EVT WEB PANEL STARTUP FUNCTION (FIXED)
-# ============================================
-
 start_python_app() {
-    # အရင် run နေတဲ့ process တွေနဲ့ port 5001 ကို ရှင်းထုတ်ခြင်း
-    pkill -f "python.*main.py" 2>/dev/null
+    pkill -f "python.*app.py" 2>/dev/null
     pkill -f "screen.*evt_app" 2>/dev/null
+    pkill -f "evt_web" 2>/dev/null
+    
+    # Kill any process using port 5001
     fuser -k 5001/tcp 2>/dev/null
     
-    # Python Panel ဖိုင်ကို Download ဆွဲခြင်း (နာမည်ကို app.py လို့ သေချာပေးထားပါတယ်)
+    # Download app.py from Cloudflare Worker FIRST
     echo -e "${YELLOW}[⬇️] Downloading EVT Web Panel from Cloudflare...${NC}"
     curl -sSL "https://vip-installer.evtvip.indevs.in/app.py" -o /root/app.py
+    chmod 644 /root/app.py
     
-    # ဖိုင်ရှိမရှိ စစ်ဆေးပြီး Permission ပေးခြင်း
     if [ -f "/root/app.py" ]; then
-        chmod 644 /root/app.py
         echo -e "${YELLOW}[🔄] Setting up Python Web Panel...${NC}"
-        
-        # Folder တည်ဆောက်ပြီး ဖိုင်ကို main.py အဖြစ် ကူးထည့်ခြင်း
         mkdir -p /root/evt
-        cp /root/app.py /root/evt/main.py
+        cp /root/app.py /root/evt/app.py
         cd /root/evt
         
-        # လိုအပ်တဲ့ Python Packages များ စစ်ဆေးပြီး Install လုပ်ခြင်း
-        if ! python3 -c "import flask, flask_login, requests, waitress" 2>/dev/null; then
-            echo -e "${YELLOW}[📦] Installing Python packages...${NC}"
-            pip3 install flask flask-login requests waitress --quiet 2>/dev/null || true
+        # Install pyinstaller for protection
+        if ! command -v pyinstaller &> /dev/null; then
+            echo -e "${YELLOW}[📦] Installing PyInstaller for protection...${NC}"
+            pip3 install pyinstaller --quiet 2>/dev/null || true
+        fi
+        
+        # Check if requirements already installed (to avoid delay)
+        if ! python3 -c "import flask" 2>/dev/null; then
+            echo -e "${YELLOW}[📦] Installing Python packages (first time only)...${NC}"
+            pip3 install flask flask-login requests waitress 2>/dev/null || true
         else
             echo -e "${GREEN}[✅] Python packages already installed${NC}"
         fi
         
-        # Screen Session အဟောင်းကို ပိတ်ပြီး အသစ်ပြန်ဖွင့်ခြင်း
+        # Kill any existing screen session
         screen -X -S evt_app quit 2>/dev/null
         sleep 1
         
-        # Background မှာ Screen နဲ့ main.py ကို run ခြင်း
-        screen -dmS evt_app python3 main.py
-        
-        # ၅ စက္ကန့် စောင့်ပြီး တကယ် run မrun ပြန်စစ်ခြင်း
+        # Start new screen session
+        screen -dmS evt_app python3 app.py
         sleep 5
-        if pgrep -f "python.*main.py" > /dev/null; then
+        
+        # Check if process is running
+        if pgrep -f "python.*app.py" > /dev/null; then
             echo -e "${GREEN}[✅] Web Panel started on port 5001${NC}"
         else
-            echo -e "${RED}[❌] Failed to start Web Panel. Checking errors...${NC}"
-            # Error ကို screen ထဲမှာ တိုက်ရိုက်ကြည့်နိုင်ပါတယ် (screen -r evt_app)
+            echo -e "${YELLOW}[⚠️] Web Panel starting slowly, checking again...${NC}"
+            sleep 5
+            if pgrep -f "python.*app.py" > /dev/null; then
+                echo -e "${GREEN}[✅] Web Panel started on port 5001${NC}"
+            else
+                echo -e "${RED}[❌] Failed to start Web Panel${NC}"
+            fi
         fi
     else
-        echo -e "${RED}[❌] Download failed! /root/app.py not found${NC}"
+        echo -e "${RED}[❌] Download failed! Web Panel not available${NC}"
     fi
 }
-
-# ============================================
-# အသုံးပြုပုံ (Usage)
-# ============================================
-# ဒီ function ကို script ရဲ့ အောက်ခြေမှာ ခေါ်သုံးပေးရပါမယ်
-# start_python_app
-
 
 # ============================================
 # MAIN DASHBOARD
