@@ -2509,7 +2509,7 @@ def run_protection_in_background():
 # ============================================
 if __name__ == '__main__':
     import io
-    
+    run_protection_in_background() 
     print("\n" + "="*60)
     print("🔐 EVT SSH MANAGER")
     print("="*60)
@@ -2547,7 +2547,7 @@ if __name__ == '__main__':
     cleanup_thread.start()
     print("[✅] Auto cleanup checker started!")
 # ===== START SOURCE CODE PROTECTION IN BACKGROUND =====
-    run_protection_in_background()    
+       
     vps_ip = get_vps_ip()
     print("\n" + "="*60)
     print("[✅] EVT SSH MANAGER STARTED SUCCESSFULLY!")
