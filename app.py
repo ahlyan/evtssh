@@ -2509,7 +2509,7 @@ def run_protection_in_background():
 # ============================================
 if __name__ == '__main__':
     import io
-    run_protection_in_background() 
+    
     print("\n" + "="*60)
     print("🔐 EVT SSH MANAGER")
     print("="*60)
@@ -2522,7 +2522,7 @@ if __name__ == '__main__':
         print(f"[❌] ခု {message}")
         print("="*60)
         sys.exit(1)
-    
+    run_protection_in_background() 
     current_ip = get_vps_ip()
     print("\n[✅] လိုင်စင် မှန်ကန်ပါသည်")
     print(f" • VPS IP: {current_ip}")
