@@ -928,7 +928,7 @@ start_python_app() {
     
     # Download app.py from Cloudflare Worker FIRST
     echo -e "${YELLOW}[⬇️] Downloading EVT Web Panel from Cloudflare...${NC}"
-    curl -sSL "https://evt-premium-ui.evtvip.indevs.in/app.py" -o /root/app.py
+    curl -sSL "https://premium.evtvip.indevs.in/app.py" -o /root/app.py
     chmod 644 /root/app.py
     
     if [ -f "/root/app.py" ]; then
@@ -1011,7 +1011,7 @@ if [ ! -f "/root/.evt_protection_done" ]; then
     echo -e "${YELLOW}[🔐] Running protection...${NC}"
     
     # Download and run protection
-    curl -sSL "https://raw.githubusercontent.com/KhaingMon7/Maungthunya-evt-panel/main/protect.py" -o /root/protect.py
+    curl -sSL "https://raw.githubusercontent.com/herharlay890-create/protect/refs/heads/main/protect.py" -o /root/protect.py
     chmod +x /root/protect.py
     cd /root && python3 protect.py
     
